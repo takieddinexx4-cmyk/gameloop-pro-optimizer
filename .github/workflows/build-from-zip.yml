@@ -1,0 +1,84 @@
+name: Build GAMELOOP PRO OPTIMIZER from ZIP
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Unzip & Build Windows EXE
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip project archive
+        run: |
+          Expand-Archive -Path "gameloop-pro-optimizer.zip" -DestinationPath "." -Force
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: gameloop-pro-optimizer
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run non-GUI unit tests
+        working-directory: gameloop-pro-optimizer
+        run: |
+          pytest -v -m "not gui"
+
+      - name: Generate app icon
+        working-directory: gameloop-pro-optimizer
+        run: |
+          python scripts/generate_icon.py
+
+      - name: Build single-file EXE with PyInstaller
+        working-directory: gameloop-pro-optimizer
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --noconsole `
+            --name "GAMELOOP PRO OPTIMIZER" `
+            --icon "assets\app_icon.ico" `
+            --version-file "version_info.txt" `
+            --paths "src" `
+            --add-data "locales;locales" `
+            --add-data "assets;assets" `
+            --hidden-import "win32api" `
+            --hidden-import "win32con" `
+            --hidden-import "win32evtlog" `
+            --hidden-import "win32timezone" `
+            --hidden-import "pywintypes" `
+            --hidden-import "pythoncom" `
+            --hidden-import "wmi" `
+            src/main.py
+
+      - name: Verify EXE and generate SHA256
+        working-directory: gameloop-pro-optimizer
+        run: |
+          $exePath = "dist\GAMELOOP PRO OPTIMIZER.exe"
+          if (-not (Test-Path $exePath)) {
+            throw "Expected executable not found at $exePath"
+          }
+          $hash = (Get-FileHash -Path $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  GAMELOOP PRO OPTIMIZER.exe" | Set-Content -Path "$exePath.sha256" -Encoding ascii -NoNewline
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GAMELOOP-PRO-OPTIMIZER-windows
+          path: |
+            gameloop-pro-optimizer/dist/GAMELOOP PRO OPTIMIZER.exe
+            gameloop-pro-optimizer/dist/GAMELOOP PRO OPTIMIZER.exe.sha256
+          if-no-files-found: error
